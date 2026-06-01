@@ -8,7 +8,7 @@ const fs = require('fs');
 
 const app = express();
 const server = http.createServer(app);
-const io = new Server(server);
+const io = new Server(server, { cors: { origin: "*" } });
 
 app.use(express.static(path.join(__dirname, 'public')));
 app.use(express.json());
@@ -16,7 +16,11 @@ app.use(express.json());
 // =================== TERMINAL ===================
 io.on('connection', (socket) => {
     const ptyProcess = pty.spawn('bash', ['--login'], {
-        cols: 100, rows: 30, cwd: __dirname, env: process.env
+        name: 'xterm-color',
+        cols: 80,
+        rows: 24,
+        cwd: process.cwd(),
+        env: process.env
     });
 
     ptyProcess.onData(data => socket.emit('terminal-output', data));
@@ -25,29 +29,40 @@ io.on('connection', (socket) => {
     socket.on('disconnect', () => ptyProcess.kill());
 });
 
-// =================== SUA IA (Chat) ===================
+// =================== CHAT COM SUA IA ===================
 let iaProcess = null;
 
 app.post('/api/ai', (req, res) => {
     const { message } = req.body;
 
     if (!iaProcess) {
-        iaProcess = spawn('python3', ['ia.py', '--web']);
+        iaProcess = spawn('python3', [path.join(__dirname, 'ia.py'), '--web']);
         
         iaProcess.stdout.on('data', (data) => {
-            io.emit('ia-response', data.toString());
+            io.emit('ia-response', data.toString().trim());
         });
     }
 
-    // Envia mensagem para o Python
     iaProcess.stdin.write(message + '\n');
-    res.json({ status: "enviado" });
+    res.json({ ok: true });
 });
 
-// =================== ARQUIVOS ===================
-app.get('/api/files', (req, res) => { /* ... mesmo de antes */ });
+// =================== GERENCIADOR DE ARQUIVOS ===================
+app.get('/api/files', (req, res) => {
+    const dir = req.query.dir || __dirname;
+    fs.readdir(dir, { withFileTypes: true }, (err, files) => {
+        if (err) return res.status(500).json({ error: err.message });
+        res.json({
+            path: dir,
+            files: files.map(f => ({
+                name: f.name,
+                isDir: f.isDirectory()
+            }))
+        });
+    });
+});
 
 const PORT = process.env.PORT || 3000;
 server.listen(PORT, () => {
-    console.log(`🚀 Painel rodando na porta ${PORT}`);
+    console.log(`🚀 Painel rodando → http://localhost:${PORT}`);
 });
