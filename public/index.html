@@ -1,0 +1,154 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>MINHA IA - Painel Portátil</title>
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/xterm/css/xterm.css">
+    <script src="https://cdn.jsdelivr.net/npm/xterm/lib/xterm.js"></script>
+    <script src="/socket.io/socket.io.js"></script>
+    <style>
+        * { margin:0; padding:0; box-sizing:border-box; }
+        body {
+            background: #0a0a0a;
+            color: #0f0;
+            font-family: 'Courier New', monospace;
+            height: 100vh;
+            display: flex;
+            flex-direction: column;
+            overflow: hidden;
+        }
+        .tabs {
+            display: flex;
+            background: #111;
+            border-bottom: 1px solid #333;
+        }
+        .tab {
+            flex: 1;
+            padding: 15px;
+            text-align: center;
+            font-size: 16px;
+            cursor: pointer;
+        }
+        .tab.active {
+            background: #1a1a1a;
+            border-bottom: 3px solid #0f0;
+        }
+        .content { flex: 1; overflow: hidden; position: relative; }
+        .panel { display: none; height: 100%; flex-direction: column; }
+        .panel.active { display: flex; }
+
+        #terminal { flex: 1; padding: 8px; background: #000; }
+        #chat { flex: 1; padding: 15px; overflow-y: auto; background: #111; }
+        .message { margin: 10px 0; padding: 10px; border-radius: 8px; }
+        .user { background: #003300; text-align: right; }
+        .ia { background: #001a33; }
+
+        input, button {
+            padding: 12px;
+            margin: 5px;
+            background: #111;
+            color: #0f0;
+            border: 1px solid #333;
+            border-radius: 6px;
+        }
+        button { background: #003300; cursor: pointer; }
+    </style>
+</head>
+<body>
+    <div class="tabs">
+        <div class="tab active" onclick="showTab(0)">Terminal</div>
+        <div class="tab" onclick="showTab(1)">Chat IA</div>
+        <div class="tab" onclick="showTab(2)">Arquivos</div>
+    </div>
+
+    <div class="content">
+        <!-- TERMINAL -->
+        <div id="panel0" class="panel active">
+            <div id="terminal"></div>
+        </div>
+
+        <!-- CHAT IA -->
+        <div id="panel1" class="panel">
+            <div id="chat"></div>
+            <div style="padding:10px; background:#111;">
+                <input type="text" id="chatInput" placeholder="Digite sua mensagem..." style="width:70%">
+                <button onclick="sendMessage()">Enviar</button>
+            </div>
+        </div>
+
+        <!-- ARQUIVOS -->
+        <div id="panel2" class="panel">
+            <div style="padding:10px; background:#111;">
+                <button onclick="loadFiles()">Atualizar Arquivos</button>
+            </div>
+            <div id="fileList" style="padding:10px; overflow-y:auto; flex:1;"></div>
+        </div>
+    </div>
+
+    <script>
+        const socket = io();
+        let term;
+
+        // Terminal
+        function initTerminal() {
+            term = new Terminal({ cursorBlink: true, theme: { background: '#000', foreground: '#0f0' }});
+            term.open(document.getElementById('terminal'));
+            term.onData(data => socket.emit('terminal-input', data));
+            socket.on('terminal-output', data => term.write(data));
+        }
+
+        // Chat IA
+        function sendMessage() {
+            const input = document.getElementById('chatInput');
+            const msg = input.value.trim();
+            if (!msg) return;
+
+            appendMessage('user', msg);
+            fetch('/api/ai', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({ message: msg })
+            });
+            input.value = '';
+        }
+
+        socket.on('ia-response', data => {
+            appendMessage('ia', data);
+        });
+
+        function appendMessage(type, text) {
+            const chat = document.getElementById('chat');
+            const div = document.createElement('div');
+            div.className = `message ${type}`;
+            div.textContent = type === 'user' ? `Você: ${text}` : `IA: ${text}`;
+            chat.appendChild(div);
+            chat.scrollTop = chat.scrollHeight;
+        }
+
+        // Arquivos
+        function loadFiles() {
+            fetch('/api/files')
+                .then(r => r.json())
+                .then(data => {
+                    const list = document.getElementById('fileList');
+                    list.innerHTML = data.files.map(f => 
+                        `<div style="padding:8px; border-bottom:1px solid #333;">
+                            ${f.isDir ? '📁' : '📄'} ${f.name}
+                        </div>`
+                    ).join('');
+                });
+        }
+
+        function showTab(n) {
+            document.querySelectorAll('.tab').forEach((t,i) => t.classList.toggle('active', i===n));
+            document.querySelectorAll('.panel').forEach((p,i) => p.classList.toggle('active', i===n));
+            if (n === 0 && !term) initTerminal();
+            if (n === 2) loadFiles();
+        }
+
+        // Iniciar
+        window.onload = () => initTerminal();
+    </script>
+</body>
+</html>
